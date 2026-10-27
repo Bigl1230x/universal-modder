@@ -9,7 +9,7 @@ engine: unity-il2cpp
 route: managed-patch
 tools:
 - MelonLoader 0.7.3
-- Harmony (via Il2CppInterop)
+- HarmonyX 2.10.2 and Il2CppInterop 1.5.1 (bundled with MelonLoader 0.7.3)
 - ilspycmd 11.1
 - AssetRipper 2.0.0
 - Blender 4.5.15
@@ -19,7 +19,10 @@ agents:
 - Claude Code (Opus 5.5)
 humans: []
 date: '2026-10-25'
-links: []
+links:
+- https://github.com/LavaGang/MelonLoader
+- https://github.com/BepInEx/Il2CppInterop
+- https://github.com/AssetRipper/AssetRipper
 tags:
 - unity6
 - il2cpp
@@ -39,9 +42,11 @@ tags:
 
 ## Setup
 - The Precinct 1.13.24987 (Steam 490110), Unity 6000.0.75f1, IL2CPP, x64, Windows 11. Single-player, no
-  anti-cheat. Saves: `%USERPROFILE%\AppData\LocalLow\Fallen Tree Games Ltd\The Precinct\SaveGame_Steam\`
+  anti-cheat, no online modes (Steam lists it as single-player only; the one DLC is the soundtrack).
+  Saves: `%USERPROFILE%\AppData\LocalLow\Fallen Tree Games Ltd\The Precinct\SaveGame_Steam\`
   (BSON, Steam Cloud). Back them up (`um backup`) before the first modded launch.
-- MelonLoader 0.7.3 (`MelonLoader.x64.zip`: `version.dll` + `MelonLoader\` into the game folder). The community
+- MelonLoader 0.7.3 (`MelonLoader.x64.zip`: `version.dll` + `MelonLoader\` into the game folder). It bundles
+  HarmonyX 2.10.2 and Il2CppInterop 1.5.1 (`1.5.1-ci.845` in its `MelonLoader.deps.json`). The community
   mods on Nexus for this game all use MelonLoader. First launch generates the interop assemblies in ~40 s.
 - Plugin: .NET 6 class library (built with SDK 10, `CheckEolTargetFramework=false`) referencing
   `MelonLoader\net6\{MelonLoader,0Harmony,Il2CppInterop.Runtime,Il2CppInterop.Common}.dll` and
@@ -53,9 +58,8 @@ tags:
 ## Route and why
 Managed patching through MelonLoader + Harmony: the game has rich, well-named managers (rank, unlocks, saves,
 story progression, frontend menus), so a mode can be assembled from the game's own systems. Asset-only or
-native
-hooking would not reach game rules. Officer portraits were rendered offline because in-game rendering kept
-crashing (Gotchas).
+native hooking would not reach game rules. Officer portraits were rendered offline because in-game rendering
+kept crashing (Gotchas).
 
 ## How the game works (what we had to learn)
 - **Saves:** `PlatformManager_PC.GetSaveGameFolderPath()` builds the game-save folder
@@ -74,7 +78,8 @@ crashing (Gotchas).
   `_levelRequirement._levelRequired` (a `RankManager.RankEnum`, 0-34), honoured when `_unlockRequirementModules`
   has `LevelRequirement` (1). The lists hang off `RankManager` (`_playerWeaponUnlocks`, `_playerVehicleUnlocks`,
   `_playerCustomisationUnlocks`, `_playerVehicleLiveryUnlocks`, `_playerPatrolVariantUnlocks`, plus single
-  feature/shift unlock fields); 61 are rank-gated. Rewriting those requirements and postfixing
+  feature/shift unlock fields); 61 are rank-gated. All of them are earned in play: the Steam version sells no
+  in-game items (one package, and the only DLC is the soundtrack). Rewriting those requirements and postfixing
   `GetPlayerRankIndex/GetPlayerRankEnum` (and holding `_playerRankIndex`) gives a custom rank ladder that XP can't
   move. `PlayerUnlock.GetName()` returns an I2 term; `Il2CppI2.Loc.LocalizationManager.GetTranslation(term)`
   gives the display name.
@@ -132,13 +137,14 @@ crashing (Gotchas).
 
 ## Gotchas
 1. **Harmony postfix on a method with an `out float` (`PlayerUpgradeManager.HasPurchasedUpgrade(..., out float)`)
-   threw `NullReferenceException ... native->managed trampoline` on every call.** **Cause:** Il2CppInterop
-   0.7.3 trampolines and `out` primitives. **Fix:** write the game's state instead
-   (`_upgradeTypesPurchased`).
+   threw `NullReferenceException ... native->managed trampoline` on every call.** **Cause:** Il2CppInterop's
+   trampolines and `out` primitives (Il2CppInterop 1.5.1, the build MelonLoader 0.7.3 ships; not narrowed down
+   further). **Fix:** write the game's state instead (`_upgradeTypesPurchased`).
 2. **An extra `Camera.Render()` for portraits hard-crashed the game (twice), leaving an unkillable 52-56 KB
    `Precinct.exe`.** **Cause:** likely the upscaler (DLSS/FSR) hooking cameras; a zombie process means a driver-level
    hang. **Fix:** no extra cameras; render portraits offline. Zombies hold the plugin DLL until reboot: rename the
-   locked DLL to install a new one.
+   locked DLL to install a new one. The same kind of unkillable process, and how to plan launches around it, is
+   in [the force-quit zombie note](../../techniques/a-force-quit-pc-game-relaunch-wedges-as-an-unkillable-zombie.md).
 3. **`ImageConversion.EncodeToPNG` threw "Instances of abstract classes cannot be created"
    (`BlittableArrayWrapper.Unmarshal`), and `Texture2D.LoadRawTextureData(byte[])` crashed the game natively.**
    **Cause:** Unity 6 array bindings under Il2CppInterop. **Fix:** `Texture2D.SetPixel` in batches across frames.
